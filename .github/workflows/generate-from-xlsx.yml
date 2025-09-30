@@ -1,135 +1,93 @@
-name: Generate JSON/YAML from XLSX and Update Sitemap
+import os
+import json
+import yaml
+import pandas as pd
+import argparse
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'templates/*.xlsx'
+# ===== CONFIG =====
+DEFAULT_DATA_FILE = "templates/client-data.xlsx"
+OUTPUT_DIR = "schema-files"
 
-jobs:
-  generate-and-update:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_TOKEN }}   # 👈 YOU SAID THIS EXISTS + HAS FULL PERMISSIONS — WE USE IT!
-          fetch-depth: 0
+# Map sheet names to output folders
+SHEET_TO_FOLDER = {
+    "core_info": "organization",
+    "Services": "services",
+    "Products": "products",
+    "FAQs": "faqs",
+    "Help Articles": "help-articles",
+    "Reviews": "reviews",
+    "Locations": "locations",
+    "Team": "team",
+    "Awards & Certifications": "awards",
+    "PressNews Mentions": "press",
+    "Case Studies": "case-studies",
+}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+# Fallback: if sheet not in map, use lowercase sheet name
+# ===================
 
-      - name: Install Dependencies
-        run: |
-          pip install pandas openpyxl PyYAML
+def ensure_output_dir():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-      - name: Get Changed XLSX Files via Git Diff
-        id: get_files
-        run: |
-          echo "📄 Comparing against base commit: ${{ github.event.before }}"
-          BEFORE_COMMIT=${{ github.event.before }}
-          if [[ "$BEFORE_COMMIT" == "0000000000000000000000000000000000000000" ]]; then
-            BEFORE_COMMIT=4b825dc642cb6eb9a060e54bf8d69288fbee4904
-          fi
+def save_json(data, path):
+    if not data:
+        print(f"⚠️ No data to save for {path}")
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    print(f"✅ FORCED WRITE: {path}")
 
-          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BEFORE_COMMIT" HEAD | grep '^templates/.*\.xlsx$' || true)
+def save_yaml(data, path):
+    if not data:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(data, f, allow_unicode=True)
+    print(f"✅ FORCED WRITE: {path}")
 
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "⚠️ No .xlsx files detected in templates/ in this push."
-          else
-            echo "✅ Detected changed XLSX files:"
-            echo "$CHANGED_FILES"
-          fi
+def process_sheet_to_file(sheet_name, df_sheet):
+    """Process one sheet → save as main-data.json/.yaml in mapped folder"""
+    # Take first row only (assumes 1 row of data per sheet)
+    if df_sheet.empty:
+        print(f"⚠️ Sheet '{sheet_name}' is empty — skipping")
+        return
 
-          echo "changed_xlsx=$CHANGED_FILES" >> $GITHUB_ENV
+    # Convert first row to dict
+    row_dict = df_sheet.iloc[0].dropna().to_dict()  # drop NaN columns
 
-      - name: Process Each XLSX File
-        if: env.changed_xlsx != ''
-        run: |
-          echo "⚙️ Processing detected XLSX files..."
-          while IFS= read -r xlsx_file; do
-            if [ -n "$xlsx_file" ] && [ -f "$xlsx_file" ]; then
-              echo "📄 Processing: $xlsx_file"
-              python ai-generators/generate_files_from_xlsx.py --input "$xlsx_file"
-            else
-              echo "❌ ERROR: File not found: '$xlsx_file'"
-            fi
-          done <<< "${{ env.changed_xlsx }}"
+    # Get target folder
+    folder_name = SHEET_TO_FOLDER.get(sheet_name, sheet_name.lower().replace(" ", "-"))
+    target_dir = os.path.join(OUTPUT_DIR, folder_name)
+    base_path = os.path.join(target_dir, "main-data")
 
-      - name: FORCE CREATE DUMMY FILES IN ALL DIRECTORIES (ENSURE GIT TRACKS THEM)
-        run: |
-          mkdir -p schema-files/organization
-          mkdir -p schema-files/services
-          mkdir -p schema-files/products
-          mkdir -p schema-files/faqs
-          mkdir -p schema-files/help-articles
-          mkdir -p schema-files/reviews
-          mkdir -p schema-files/locations
-          mkdir -p schema-files/team
-          mkdir -p schema-files/awards
-          mkdir -p schema-files/press
-          mkdir -p schema-files/case-studies
-          touch schema-files/organization/.gitkeep
-          touch schema-files/services/.gitkeep
-          touch schema-files/products/.gitkeep
-          touch schema-files/faqs/.gitkeep
-          touch schema-files/help-articles/.gitkeep
-          touch schema-files/reviews/.gitkeep
-          touch schema-files/locations/.gitkeep
-          touch schema-files/team/.gitkeep
-          touch schema-files/awards/.gitkeep
-          touch schema-files/press/.gitkeep
-          touch schema-files/case-studies/.gitkeep
+    # Save JSON
+    save_json(row_dict, base_path + ".json")
 
-      - name: Generate or Update Sitemap (FORCE UPDATE)
-        run: |
-          # Force update sitemap even if content didn't change
-          python generate_sitemaps.py
-          # Touch it to ensure modification time changes
-          touch ai-sitemap.xml
+    # Save YAML
+    save_yaml(row_dict, base_path + ".yaml")
 
-      - name: Verify All Generated Files Exist
-        run: |
-          echo "🔍 VERIFYING OUTPUTS — Listing all generated files:"
-          echo "=================================================="
-          find schema-files -type f KATEX_INLINE_OPEN -name "*.json" -o -name "*.yaml" -o -name ".gitkeep" KATEX_INLINE_CLOSE | sort
-          echo ""
-          echo "📄 ai-sitemap.xml last modified:"
-          ls -la ai-sitemap.xml
+def generate_all_files(input_file):
+    ensure_output_dir()
+    print(f"📄 Processing: {input_file}")
+    
+    # Load ALL sheets
+    xls = pd.read_excel(input_file, sheet_name=None)  # Returns dict: sheet_name → DataFrame
+    print(f"📄 Sheets found: {list(xls.keys())}")
 
-      - name: Configure Git Identity
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+    for sheet_name, df_sheet in xls.items():
+        print(f"\n--- PROCESSING: {sheet_name} ---")
+        process_sheet_to_file(sheet_name, df_sheet)
 
-      - name: Setup Remote with Token (Extra Safety)
-        run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
+def main():
+    parser = argparse.ArgumentParser(description="Generate structured files from XLSX sheets")
+    parser.add_argument("--input", "-i", default=DEFAULT_DATA_FILE,
+                        help="Path to input .xlsx file")
+    args = parser.parse_args()
 
-      - name: FORCE ADD AND COMMIT EVERYTHING
-        run: |
-          # Add everything including new files and directories
-          git add --all
+    print("⚙️ Starting processing...")
+    generate_all_files(args.input)
+    print("🎉 SUCCESS: Files written!")
 
-          # Show what's staged
-          echo "📦 STAGED CHANGES:"
-          git status --short
-
-          # ALWAYS commit, even if "nothing to commit"
-          git commit -m "🤖 Auto-generate files from XLSX and update sitemap [$(date +'%Y-%m-%d %H:%M:%S')]" || echo "✅ No changes, but proceeding to push anyway"
-
-          # PUSH WITH VERBOSE OUTPUT
-          echo "🚀 ATTEMPTING PUSH TO BRANCH: ${{ github.ref_name }}"
-          git push origin ${{ github.ref_name }}
-
-          echo "✅ PUSH COMPLETED — CHECK ABOVE FOR ERRORS"
-
-      - name: DEBUG - Verify Push Result
-        run: |
-          echo "🔎 Verifying latest commit on remote..."
-          git fetch origin ${{ github.ref_name }}
-          git log -1 origin/${{ github.ref_name }} --oneline
-          echo "✅ If you see your commit above, SUCCESS! Files are live in repo."
+if __name__ == "__main__":
+    main()
