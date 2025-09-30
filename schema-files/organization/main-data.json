@@ -2,15 +2,13 @@
   "client_name": "Cave Training",
   "website": "cavetrainingfit.com",
   "category": "Fitness training facility; Functional training, strength and conditioning gym",
-  "tagline": "Fitness through a lens of Performance Capacity, Accountability, and Sustainable Lifestyle choices",
+  "tagline": "Fitness through a lens of Performance Capacity, Accountability, and Sustainable Lifestyle choices\n",
   "description": "Cave Training is a top-of-industry training and performance facility combining functional training with strength and conditioning in a team environment. They offer high-energy group classes, one-on-one training, yoga, and repair classes, all with capped class sizes to maintain personalized attention. The goal is to help clients gain strength, mental clarity, and optimal life potential through performance-focused and sustainable fitness practices.",
   "business_hours": "Monday-Saturday, 6 AM to 8 PM",
-  "year_founded": 2017,
-  "number_of_employees": "",
-  "address": "21515 Soledad Canyon Rd Suite 109, Santa Clarita, CA 91350",
-  "phone": "(661) 674-7162",
+  "year_founded": 2017.0,
+  "number_of_employees": 4.0,
+  "address": "21515 Soledad Canyon Rd Suite 109, Santa Clarita, CA 91350\n",
+  "phone": "(661) 674-7162\n",
   "email": "coachnikkiadams@gmail.com",
-  "sameAs": [
-    "https://www.cavetrainingfit.com/about/"
-  ]
+  "sameAs": "https://www.cavetrainingfit.com/about/"
 }
