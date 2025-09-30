@@ -13,13 +13,16 @@ def get_site_url():
             if url:
                 return url.rstrip('/')
     # Fallback to env (in case script runs outside workflow)
-    return os.getenv('SITE_BASE_URL', 'cavetrainingfit.com').rstrip('/')
+    return os.getenv('SITE_BASE_URL', 'https://www.cavetrainingfit.com').rstrip('/')  # 👈 Added https:// for safety
 
 def find_generated_files():
-    """Find all generated .json and .yaml in schema-files/"""
+    """Find all generated .json, .yaml, .md, .llm in schema-files/"""
     patterns = [
         "schema-files/**/*.json",
-        "schema-files/**/*.yaml"
+        "schema-files/**/*.yaml",
+        "schema-files/**/*.yml",
+        "schema-files/**/*.md",
+        "schema-files/**/*.llm"
     ]
     files = []
     for pattern in patterns:
