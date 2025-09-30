@@ -3,6 +3,7 @@ import json
 import yaml
 import pandas as pd
 import argparse
+from datetime import datetime
 
 # ===== CONFIG =====
 DEFAULT_DATA_FILE = "templates/client-data.xlsx"
@@ -27,21 +28,49 @@ SHEET_TO_FOLDER = {
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def sanitize_value(val):
+    """Convert any non-JSON-safe value into string or None"""
+    if pd.isna(val):  # Covers NaN, NaT, None
+        return None
+    elif isinstance(val, (pd.Timestamp, datetime)):
+        return val.isoformat()
+    elif isinstance(val, pd.Timedelta):
+        return str(val)
+    elif hasattr(val, 'to_pydatetime'):  # Some pandas datetime types
+        return val.to_pydatetime().isoformat()
+    elif isinstance(val, (list, dict)):
+        # Recursively sanitize nested structures (unlikely in your data, but safe)
+        if isinstance(val, list):
+            return [sanitize_value(x) for x in val]
+        else:
+            return {k: sanitize_value(v) for k, v in val.items()}
+    else:
+        # Fallback: convert everything else to string if needed later
+        return val
+
 def save_json(data, path):
     if not data:
         print(f"⚠️ No data to save for {path}")
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    # Deep sanitize every value
+    clean_data = {k: sanitize_value(v) for k, v in data.items()}
+
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(clean_data, f, indent=2, ensure_ascii=False)
     print(f"✅ SAVED: {path}")
 
 def save_yaml(data, path):
     if not data:
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    
+    # Sanitize for YAML too (though YAML is more forgiving)
+    clean_data = {k: sanitize_value(v) for k, v in data.items()}
+
     with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, allow_unicode=True)
+        yaml.dump(clean_data, f, allow_unicode=True)
     print(f"✅ SAVED: {path}")
 
 def process_sheet_to_file(sheet_name, df_sheet):
@@ -51,7 +80,7 @@ def process_sheet_to_file(sheet_name, df_sheet):
         return
 
     # Take first row only → convert to clean dict
-    row_dict = df_sheet.iloc[0].dropna().to_dict()
+    row_dict = df_sheet.iloc[0].to_dict()
 
     # Get target folder name
     folder_name = SHEET_TO_FOLDER.get(sheet_name, sheet_name.lower().replace(" ", "-"))
