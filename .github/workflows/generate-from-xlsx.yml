@@ -1,0 +1,124 @@
+name: Generate JSON/YAML from XLSX and Update Sitemap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'templates/*.xlsx'
+
+jobs:
+  generate-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas openpyxl PyYAML
+
+      - name: Get Changed XLSX Files via Git Diff
+        id: get_files
+        run: |
+          echo "📄 Comparing against base commit: ${{ github.event.before }}"
+          BEFORE_COMMIT=${{ github.event.before }}
+          if [[ "$BEFORE_COMMIT" == "0000000000000000000000000000000000000000" ]]; then
+            BEFORE_COMMIT=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+          fi
+
+          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BEFORE_COMMIT" HEAD | grep '^templates/.*\.xlsx$' || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "⚠️ No .xlsx files detected in templates/ in this push."
+          else
+            echo "✅ Detected changed XLSX files:"
+            echo "$CHANGED_FILES"
+          fi
+
+          echo "changed_xlsx=$CHANGED_FILES" >> $GITHUB_ENV
+
+      - name: Process Each XLSX File
+        if: env.changed_xlsx != ''
+        run: |
+          echo "⚙️ Processing detected XLSX files..."
+          while IFS= read -r xlsx_file; do
+            if [ -n "$xlsx_file" ] && [ -f "$xlsx_file" ]; then
+              echo "📄 Processing: $xlsx_file"
+              python ai-generators/generate_files_from_xlsx.py --input "$xlsx_file"
+            else
+              echo "❌ ERROR: File not found: '$xlsx_file'"
+            fi
+          done <<< "${{ env.changed_xlsx }}"
+
+      - name: FORCE CREATE DUMMY FILES IN ALL DIRECTORIES (ENSURE GIT TRACKS THEM)
+        run: |
+          mkdir -p schema-files/organization
+          mkdir -p schema-files/services
+          mkdir -p schema-files/products
+          mkdir -p schema-files/faqs
+          mkdir -p schema-files/help-articles
+          mkdir -p schema-files/reviews
+          mkdir -p schema-files/locations
+          mkdir -p schema-files/team
+          mkdir -p schema-files/awards
+          mkdir -p schema-files/press
+          mkdir -p schema-files/case-studies
+          touch schema-files/organization/.gitkeep
+          touch schema-files/services/.gitkeep
+          touch schema-files/products/.gitkeep
+          touch schema-files/faqs/.gitkeep
+          touch schema-files/help-articles/.gitkeep
+          touch schema-files/reviews/.gitkeep
+          touch schema-files/locations/.gitkeep
+          touch schema-files/team/.gitkeep
+          touch schema-files/awards/.gitkeep
+          touch schema-files/press/.gitkeep
+          touch schema-files/case-studies/.gitkeep
+
+      - name: Generate or Update Sitemap (FORCE UPDATE)
+        run: |
+          # Force update sitemap even if content didn't change
+          python generate_sitemaps.py
+          # Touch it to ensure modification time changes
+          touch ai-sitemap.xml
+
+      - name: Verify All Generated Files Exist
+        run: |
+          echo "🔍 VERIFYING OUTPUTS — Listing all generated files:"
+          echo "=================================================="
+          find schema-files -type f KATEX_INLINE_OPEN -name "*.json" -o -name "*.yaml" -o -name ".gitkeep" KATEX_INLINE_CLOSE | sort
+          echo ""
+          echo "📄 ai-sitemap.xml last modified:"
+          ls -la ai-sitemap.xml
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git switch --detach ${{ github.ref_name }}
+
+      - name: FORCE ADD AND COMMIT EVERYTHING
+        run: |
+          # Add everything including new files and directories
+          git add --all
+
+          # Show what's staged
+          echo "📦 STAGED CHANGES:"
+          git status
+
+          # ALWAYS commit, even if "no changes" — force it
+          git commit -m "🤖 Auto-generate files from XLSX and update sitemap" || echo "✅ Already up to date, forcing push anyway"
+
+          # Push
+          git push origin ${{ github.ref_name }}
+
+          echo "🚀 PUSH ATTEMPT COMPLETED"
