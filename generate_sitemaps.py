@@ -13,7 +13,7 @@ def get_site_url():
             if url:
                 return url.rstrip('/')
     # Fallback to env (in case script runs outside workflow)
-    return os.getenv('SITE_BASE_URL', 'https://github.com/DFYRANKINGS/Cave-Training-AI-Data/').rstrip('/')  # 👈 Added https:// for safety
+    return os.getenv('SITE_BASE_URL', 'https://github.com/DFYRANKINGS/Cave-Training-AI-Data/').rstrip('/')
 
 def find_generated_files():
     """Find all generated .json, .yaml, .md, .llm in schema-files/"""
