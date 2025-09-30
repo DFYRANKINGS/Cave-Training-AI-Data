@@ -13,7 +13,7 @@ def get_site_url():
             if url:
                 return url.rstrip('/')
     # Fallback to env (in case script runs outside workflow)
-    return os.getenv('SITE_BASE_URL', 'https://example.com').rstrip('/')
+    return os.getenv('SITE_BASE_URL', 'cavetrainingfit.com').rstrip('/')
 
 def find_generated_files():
     """Find all generated .json and .yaml in schema-files/"""
