@@ -31,7 +31,6 @@ def generate_sitemap_xml(site_url, files):
     ]
 
     for file_path in files:
-        # Convert file path to URL path
         public_path = file_path.replace("\\", "/")  # Windows-safe
         full_url = f"{site_url}/{public_path}"
         
@@ -41,7 +40,6 @@ def generate_sitemap_xml(site_url, files):
         xml_lines.append("  </url>")
 
     xml_lines.append("</urlset>")
-
     return "\n".join(xml_lines)
 
 def main():
@@ -60,7 +58,7 @@ def main():
         f.write(sitemap_content)
 
     print("✅ ai-sitemap.xml generated successfully.")
-    print("🌐 Example URL: https://raw.githubusercontent.com/DFYRANKINGS/Cave-Training-AI-Data/main/schema-files/organization/main-data.json")
+    print("🌐 Test a file: https://raw.githubusercontent.com/DFYRANKINGS/Cave-Training-AI-Data/main/schema-files/organization/main-data.json")
 
 if __name__ == "__main__":
     main()
