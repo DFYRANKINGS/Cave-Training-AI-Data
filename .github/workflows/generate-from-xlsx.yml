@@ -1,124 +1,117 @@
-name: Generate JSON/YAML from XLSX and Update Sitemap
+import os
+import json
+import yaml
+import pandas as pd
+import argparse
+from datetime import datetime
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'templates/*.xlsx'
+# ===== CONFIG =====
+DEFAULT_DATA_FILE = "templates/client-data.xlsx"
+OUTPUT_DIR = "schema-files"
 
-jobs:
-  generate-and-update:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_TOKEN }}
-          fetch-depth: 0
+# Map Google Sheet tab names → output folder names
+SHEET_TO_FOLDER = {
+    "core_info": "organization",
+    "Services": "services",
+    "Products": "products",
+    "FAQs": "faqs",
+    "Help Articles": "help-articles",
+    "Reviews": "reviews",
+    "Locations": "locations",
+    "Team": "team",
+    "Awards & Certifications": "awards",
+    "PressNews Mentions": "press",
+    "Case Studies": "case-studies",
+}
+# ===================
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+def ensure_output_dir():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-      - name: Install Dependencies
-        run: |
-          pip install pandas openpyxl PyYAML
+def json_serializable(obj):
+    """Convert non-JSON-serializable objects (like Timestamp) to strings"""
+    if isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
+    elif isinstance(obj, (pd.Timedelta,)):
+        return str(obj)
+    elif pd.isna(obj):  # Handle NaN/NaT
+        return None
+    else:
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-      - name: Get Changed XLSX Files via Git Diff
-        id: get_files
-        run: |
-          echo "📄 Comparing against base commit: ${{ github.event.before }}"
-          BEFORE_COMMIT=${{ github.event.before }}
-          if [[ "$BEFORE_COMMIT" == "0000000000000000000000000000000000000000" ]]; then
-            BEFORE_COMMIT=4b825dc642cb6eb9a060e54bf8d69288fbee4904
-          fi
+def save_json(data, path):
+    if not data:
+        print(f"⚠️ No data to save for {path}")
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Convert any Timestamp/datetime to string before saving
+    clean_data = {}
+    for k, v in data.items():
+        try:
+            clean_data[k] = json_serializable(v) if isinstance(v, (pd.Timestamp, datetime, pd.Timedelta)) else v
+        except TypeError:
+            # Fallback: convert to string if not handled above
+            clean_data[k] = str(v) if pd.notna(v) else None
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(clean_data, f, indent=2, ensure_ascii=False, default=json_serializable)
+    print(f"✅ SAVED: {path}")
 
-          CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BEFORE_COMMIT" HEAD | grep '^templates/.*\.xlsx$' || true)
+def save_yaml(data, path):
+    if not data:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # YAML handles dates better, but still sanitize
+    clean_data = {}
+    for k, v in data.items():
+        if isinstance(v, (pd.Timestamp, datetime)):
+            clean_data[k] = v.isoformat()
+        elif pd.isna(v):
+            clean_data[k] = None
+        else:
+            clean_data[k] = v
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(clean_data, f, allow_unicode=True)
+    print(f"✅ SAVED: {path}")
 
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "⚠️ No .xlsx files detected in templates/ in this push."
-          else
-            echo "✅ Detected changed XLSX files:"
-            echo "$CHANGED_FILES"
-          fi
+def process_sheet_to_file(sheet_name, df_sheet):
+    """Process one sheet → save as main-data.json/.yaml in mapped folder"""
+    if df_sheet.empty:
+        print(f"⚠️ Sheet '{sheet_name}' is empty — skipping")
+        return
 
-          echo "changed_xlsx=$CHANGED_FILES" >> $GITHUB_ENV
+    # Take first row only → convert to clean dict
+    row_dict = df_sheet.iloc[0].to_dict()
 
-      - name: Process Each XLSX File
-        if: env.changed_xlsx != ''
-        run: |
-          echo "⚙️ Processing detected XLSX files..."
-          while IFS= read -r xlsx_file; do
-            if [ -n "$xlsx_file" ] && [ -f "$xlsx_file" ]; then
-              echo "📄 Processing: $xlsx_file"
-              python ai-generators/generate_files_from_xlsx.py --input "$xlsx_file"
-            else
-              echo "❌ ERROR: File not found: '$xlsx_file'"
-            fi
-          done <<< "${{ env.changed_xlsx }}"
+    # Get target folder name
+    folder_name = SHEET_TO_FOLDER.get(sheet_name, sheet_name.lower().replace(" ", "-"))
+    target_dir = os.path.join(OUTPUT_DIR, folder_name)
+    base_path = os.path.join(target_dir, "main-data")
 
-      - name: FORCE CREATE DUMMY FILES IN ALL DIRECTORIES (ENSURE GIT TRACKS THEM)
-        run: |
-          mkdir -p schema-files/organization
-          mkdir -p schema-files/services
-          mkdir -p schema-files/products
-          mkdir -p schema-files/faqs
-          mkdir -p schema-files/help-articles
-          mkdir -p schema-files/reviews
-          mkdir -p schema-files/locations
-          mkdir -p schema-files/team
-          mkdir -p schema-files/awards
-          mkdir -p schema-files/press
-          mkdir -p schema-files/case-studies
-          touch schema-files/organization/.gitkeep
-          touch schema-files/services/.gitkeep
-          touch schema-files/products/.gitkeep
-          touch schema-files/faqs/.gitkeep
-          touch schema-files/help-articles/.gitkeep
-          touch schema-files/reviews/.gitkeep
-          touch schema-files/locations/.gitkeep
-          touch schema-files/team/.gitkeep
-          touch schema-files/awards/.gitkeep
-          touch schema-files/press/.gitkeep
-          touch schema-files/case-studies/.gitkeep
+    # Save both formats
+    save_json(row_dict, base_path + ".json")
+    save_yaml(row_dict, base_path + ".yaml")
 
-      - name: Generate or Update Sitemap (FORCE UPDATE)
-        run: |
-          python generate_sitemaps.py
-          touch ai-sitemap.xml
+def generate_all_files(input_file):
+    ensure_output_dir()
+    print(f"📄 Processing: {input_file}")
+    
+    # Load all sheets from XLSX
+    xls = pd.read_excel(input_file, sheet_name=None)  # Returns dict: sheet_name → DataFrame
+    print(f"📄 Sheets found: {list(xls.keys())}")
 
-      - name: Verify All Generated Files Exist
-        run: |
-          echo "🔍 VERIFYING OUTPUTS — Listing all generated files:"
-          echo "=================================================="
-          find schema-files -type f KATEX_INLINE_OPEN -name "*.json" -o -name "*.yaml" -o -name "*.md" -o -name "*.llm" KATEX_INLINE_CLOSE | sort
-          echo ""
-          echo "📄 ai-sitemap.xml last modified:"
-          ls -la ai-sitemap.xml
+    for sheet_name, df_sheet in xls.items():
+        print(f"\n--- PROCESSING: {sheet_name} ---")
+        process_sheet_to_file(sheet_name, df_sheet)
 
-      - name: Configure Git Identity
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+def main():
+    parser = argparse.ArgumentParser(description="Generate schema files from XLSX tabs")
+    parser.add_argument("--input", "-i", default=DEFAULT_DATA_FILE,
+                        help="Path to input .xlsx file")
+    args = parser.parse_args()
 
-      - name: Setup Remote with Token (Extra Safety)
-        run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
+    print("⚙️ Starting processing...")
+    generate_all_files(args.input)
+    print("🎉 SUCCESS: All schema files generated!")
 
-      - name: FORCE ADD AND COMMIT EVERYTHING
-        run: |
-          git add --all
-          echo "📦 STAGED CHANGES:"
-          git status --short
-          git commit -m "🤖 Auto-generate schema + sitemap [$(date +'%Y-%m-%d %H:%M:%S')]" || echo "✅ No changes, still pushing"
-          echo "🚀 PUSHING TO: ${{ github.ref_name }}"
-          git push origin ${{ github.ref_name }}
-
-      - name: DEBUG - Verify Push Result
-        run: |
-          echo "🔎 Verifying latest commit on remote..."
-          git fetch origin ${{ github.ref_name }}
-          git log -1 origin/${{ github.ref_name }} --oneline
-          echo "✅ If commit above matches, SUCCESS! Files are live at Raw URLs."
+if __name__ == "__main__":
+    main()
