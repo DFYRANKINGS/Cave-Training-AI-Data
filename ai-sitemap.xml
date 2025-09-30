@@ -1,3 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>cavetrainingfit.com/schema-files/organization/main-data.json</loc>
+    <lastmod>2025-09-30T21:05:00+00:00</lastmod>
+  </url>
+  <url>
+    <loc>cavetrainingfit.com/schema-files/organization/main-data.yaml</loc>
+    <lastmod>2025-09-30T21:05:00+00:00</lastmod>
+  </url>
 </urlset>
