@@ -4,11 +4,12 @@ import yaml
 import pandas as pd
 import datetime
 import xml.etree.ElementTree as ET
+import argparse  # 👈 NEW — for CLI args
 
 # ========= CONFIG =========
-DATA_FILE = "templates/client-data.xlsx"
+DEFAULT_DATA_FILE = "templates/client-data.xlsx"  # fallback if no --input given
 OUTPUT_DIR = "schema-files"
-SITE_BASE = "https://example.com"  # <-- CHANGE THIS to your live domain
+SITE_BASE = "https://www.cavetrainingfit.com"  # <-- CHANGE THIS to your live domain
 SITEMAP_FILE = "ai-sitemap.xml"
 # ==========================
 
@@ -16,6 +17,8 @@ def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def load_client_data(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"❌ Input file not found: {file_path}")
     return pd.read_excel(file_path)
 
 def save_json(data, path):
@@ -72,9 +75,10 @@ def generate_files_from_row(row):
         llm_content += f"{col}: {val}\n"
     save_llm(llm_content, os.path.join(base_path, f"{base_name}.llm"))
 
-def generate_all_files():
+def generate_all_files(input_file):
     ensure_output_dir()
-    df = load_client_data(DATA_FILE)
+    df = load_client_data(input_file)  # 👈 NOW USES PASSED FILE
+    print(f"📄 Sheets found: {df.sheet_names if hasattr(df, 'sheet_names') else ['Single Sheet']}")
     for _, row in df.iterrows():
         generate_files_from_row(row)
 
@@ -100,14 +104,19 @@ def generate_sitemap(root_dir=OUTPUT_DIR, output_file=SITEMAP_FILE):
 
     tree = ET.ElementTree(urlset)
     tree.write(output_file, encoding="utf-8", xml_declaration=True)
-    print(f"Sitemap written to {output_file}")
+    print(f"🌐 Sitemap written to {output_file}")
 
 def main():
-    print("Generating structured files from Excel...")
-    generate_all_files()
-    print("Building sitemap...")
+    parser = argparse.ArgumentParser(description="Generate structured files from XLSX")
+    parser.add_argument("--input", "-i", default=DEFAULT_DATA_FILE,
+                        help="Path to input .xlsx file (default: templates/client-data.xlsx)")
+    args = parser.parse_args()
+
+    print(f"⚙️ Starting processing for: {args.input}")
+    generate_all_files(args.input)  # 👈 PASS CLI ARG TO PROCESSOR
+    print("🏗️ Building sitemap...")
     generate_sitemap()
-    print("Done!")
+    print("🎉 Done!")
 
 if __name__ == "__main__":
     main()
