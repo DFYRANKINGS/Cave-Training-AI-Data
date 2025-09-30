@@ -14,7 +14,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}   # 👈 YOU SAID THIS EXISTS + HAS FULL PERMISSIONS — WE USE IT!
           fetch-depth: 0
 
       - name: Set up Python
@@ -100,11 +100,14 @@ jobs:
           echo "📄 ai-sitemap.xml last modified:"
           ls -la ai-sitemap.xml
 
-      - name: Configure Git
+      - name: Configure Git Identity
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git switch --detach ${{ github.ref_name }}
+
+      - name: Setup Remote with Token (Extra Safety)
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: FORCE ADD AND COMMIT EVERYTHING
         run: |
@@ -113,12 +116,20 @@ jobs:
 
           # Show what's staged
           echo "📦 STAGED CHANGES:"
-          git status
+          git status --short
 
-          # ALWAYS commit, even if "no changes" — force it
-          git commit -m "🤖 Auto-generate files from XLSX and update sitemap" || echo "✅ Already up to date, forcing push anyway"
+          # ALWAYS commit, even if "nothing to commit"
+          git commit -m "🤖 Auto-generate files from XLSX and update sitemap [$(date +'%Y-%m-%d %H:%M:%S')]" || echo "✅ No changes, but proceeding to push anyway"
 
-          # Push
+          # PUSH WITH VERBOSE OUTPUT
+          echo "🚀 ATTEMPTING PUSH TO BRANCH: ${{ github.ref_name }}"
           git push origin ${{ github.ref_name }}
 
-          echo "🚀 PUSH ATTEMPT COMPLETED"
+          echo "✅ PUSH COMPLETED — CHECK ABOVE FOR ERRORS"
+
+      - name: DEBUG - Verify Push Result
+        run: |
+          echo "🔎 Verifying latest commit on remote..."
+          git fetch origin ${{ github.ref_name }}
+          git log -1 origin/${{ github.ref_name }} --oneline
+          echo "✅ If you see your commit above, SUCCESS! Files are live in repo."
